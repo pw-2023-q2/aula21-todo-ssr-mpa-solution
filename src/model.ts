@@ -1,4 +1,4 @@
-const ra = '2123690'
+const ra = ''
 const host = 'https://todo-server-spa-ozyq2qhxqq-rj.a.run.app/api'
 
 /**
