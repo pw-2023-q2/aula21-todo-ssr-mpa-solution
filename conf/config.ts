@@ -7,14 +7,10 @@ export const config = {
         testName: "todo-api-test",
         collections: {
             todoItems: "todo-items",
-            sequences: "sequences",
-            users: "users",
-            sessions: "sessions"
+            sequences: "sequences"
         }, 
         sequences: {
-            toDoItemId: 'todo-item-id',
-            userId: 'user-id'
+            toDoItemId: 'todo-item-id'
         }
-    },
-    sessionSecret: secrets.sessionSecret
+    }
 }
