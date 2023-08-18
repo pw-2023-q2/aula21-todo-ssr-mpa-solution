@@ -1,16 +1,32 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { engine } from "express-handlebars";
 import * as path from "path"
-import { ToDoItem, ToDoItemDAO } from "./model";
-import { ascComparator, descComparator, groupByTags } from "./utils";
-import e from "express";
+import { Database, sessionStore } from "./models/database";
+import { ItemController } from "./controllers/item-controller";
+import { UserController } from "./controllers/user-controller";
+import session from "express-session";
+import { config } from "../conf/config";
 
+/**
+ * main route
+ */
 const app = express()
 
-const STATIC_DIR = path.join(__dirname, '..', 'static')
+/**
+ * home route
+ */
+app.get('/', (req, res) => {
+    res.redirect('/items/newest')
+})
 
-app.use('/static', express.static(STATIC_DIR));
+/**
+ * static route
+ */
+app.use('/static', express.static(path.join(__dirname, '..', 'static')));
 
+/**
+ * template middleware
+ */
 app.engine('handlebars', engine({
     helpers: {
         formatDate: (date: string) => (date) ? date.substring(0,16) : '',
@@ -26,129 +42,77 @@ app.engine('handlebars', engine({
 app.set('view engine', 'handlebars');
 app.set('views', path.resolve(__dirname, '..', 'views'));
 
-const dao = new ToDoItemDAO()
+/**
+ * session middleware
+ */
+app.use(session({
+    secret: config.sessionSecret,
+    resave: false,
+    saveUninitialized: true,
+    cookie: {secure: 'auto'},
+    store: sessionStore
+}))
 
-class ToDoItemMapper {
-    static fromJson(json: any): ToDoItem {
-        if ('description' in json) {
-            const item = {
-                id: 0,
-                description: json.description
-            } as ToDoItem
-            if ('id' in json) {
-                item.id = parseInt(json.id)
-            }
-            if ('tags' in json) {
-                item.tags = (json.tags as string).split(',').map( el => el.trim())
-            }
-            if ('deadline' in json) {
-                item.deadline = json.deadline
-            }
-
-            return item
-        }
-        throw new Error('Invalid item format')
+declare module 'express-session' {
+    interface SessionData {
+        authenticated: boolean,
+        email: string
     }
 }
 
-app.get('/', (req, res) => {
-    res.redirect('/newest')
+/**
+ * authentication utilities
+ */
+app.use((req, res, next) => {
+    res.locals.authenticated = (req.session.authenticated) ? true : false
+    res.locals.email = (req.session.email) ? req.session.email : 'unknown'
+    next()
 })
 
-app.get('/newest', async (req, res, next) => {
-    try {
-        const items = await dao.listAll()
-
-        items.sort(ascComparator)
-        res.render('newest', {
-            items: items
-        })
-    } catch(error) {
-        next(error)
+const authenticate: RequestHandler = (req, res, next) => {
+    if (req.session.authenticated) {
+        next()
+    } else {
+        res.redirect("/signin")
     }
-    
-})
+}
 
-app.get('/oldest', async (req, res, next) => {
-    try {
-        const items = await dao.listAll()
+/**
+ * dependencies
+ */
+const database = new Database()
+const itemController = new ItemController(database)
+const userController = new UserController(database)
 
-        items.sort(descComparator)
+/**
+ * items route
+ */
+const items = express.Router()
 
-        res.render('oldest', {
-            items: items
-        })
-    } catch(error) {
-        next(error)
-    }
-    
-})
+app.use('/items', authenticate, items)
+items.get('/newest', itemController.newest)
+items.get('/oldest', itemController.oldest)
+items.get('/tags', itemController.tags)
+items.get('/add', itemController.addForm)
+items.post('/add', express.urlencoded({extended: true}), itemController.addProcess)
+items.get('/edit/:id', itemController.editForm)
+items.post('/edit', express.urlencoded({extended: true}), itemController.editProcess)
+items.post('/remove/:id', itemController.remove)
 
-app.get('/tags', async (req, res, next) => {
-    try {
-        const groupedItems = groupByTags(await dao.listAll())
+/**
+ * auth routes
+ */
+const users = express.Router()
 
-        res.render('tags', {
-            tags: Object.keys(groupedItems).sort(),
-            items: groupedItems
-        })
-    } catch(error) {
-        next(error)
-    }
-})
+app.get('/signup', userController.signupForm)
+app.post('/signup', express.urlencoded({extended: true}), userController.signupProcess)
+app.get('/signin', userController.signinForm)
+app.post('/signin', express.urlencoded({extended: true}), userController.signinProcess)
+app.get('/signoff', userController.signoff)
 
-app.get('/add', (req, res) => {
-    res.render('add')
-})
-
-app.post('/add', express.urlencoded({extended: true}), async (req, res, next) => {
-    try {
-        await dao.insert(ToDoItemMapper.fromJson(req.body))
-        res.render('status', {
-            code: 'item_add_success'
-        })
-    } catch(error) {
-        next(error)
-    }
-})
-
-app.get('/edit/:id', async (req, res, next) => {
-    try {
-        const item = await dao.findById(req.params.id)    
-
-        res.render('add', {
-            item: item,
-            edit: true
-        })    
-    } catch(error) {
-        next(error)
-    }
-    
-})
-
-app.post('/edit', express.urlencoded({extended: true}), async (req, res, next) => {
-    try {
-        await dao.update(ToDoItemMapper.fromJson(req.body))
-        res.render('status', {
-            code: 'item_update_success'
-        })
-    } catch(error) {
-        next(error)
-    }
-})
-
-app.post('/remove/:id', async (req, res, next) => {
-    try {
-        await dao.removeById(req.params.id)
-        res.render('status', {
-            code: 'item_remove_success'
-        })    
-    } catch(error) {
-        next(error)
-    }
-    
-})
-
+/**
+ * Error route
+ */
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error(err)    
     res.status(500).render('status', {
@@ -156,6 +120,11 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
     })
 })
 
-app.listen(3000, () => {
-    console.log(`ToDo! server listening on port 3000!`);
+/**
+ * Server startup
+ */
+const port = process.env.PORT || 3000
+
+app.listen(port, () => {
+    console.log(`Server started at port ${port}`)
 })

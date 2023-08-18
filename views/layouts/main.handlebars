@@ -20,10 +20,21 @@
     <header class="border-bottom">
         <nav class="navbar navbar-expand-md navbar-light">
             <div class="container-fluid">
-                <a href="#" class="navbar-brand">
+                <a href="/" class="navbar-brand">
                     <img src="https://icon-library.net//images/to-do-list-icon/to-do-list-icon-13.jpg" height="50px" />
                     <span id="app-name" class="h2 align-middle">ToDo!</span>
                 </a>
+                {{#if authenticated}}
+                    <div class="d-flex" role="menu">
+                        <span class="me-4">{{email}}</span>
+                        <a href="/signoff">Sign-off</a>
+                    </div>
+                {{else}}
+                    <div class="d-flex" role="menu">
+                        <a href="/signin" class="me-2">Sign-in</a>
+                        <a href="/signup">Sign-up</a>
+                    </div>
+                {{/if}}
             </div>
         </nav>
     </header>
